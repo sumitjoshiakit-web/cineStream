@@ -1,4 +1,5 @@
 import { MOCK_MOVIES } from '../../src/data/mockMovies.ts';
+import { fetchWithRetry } from '../../src/utils/fetchWithRetry.ts';
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
@@ -20,7 +21,11 @@ export default async function handler(req: any, res: any) {
         tmdbUrl.searchParams.set('api_key', apiKey);
       }
 
-      const tmdbRes = await fetch(tmdbUrl.toString(), { headers });
+      const tmdbRes = await fetchWithRetry(tmdbUrl.toString(), { headers }, {
+        maxRetries: 3,
+        initialDelayMs: 350,
+      });
+
       if (tmdbRes.ok) {
         const data = await tmdbRes.json();
         res.setHeader('Content-Type', 'application/json');

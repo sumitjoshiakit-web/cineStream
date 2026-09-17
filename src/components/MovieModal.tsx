@@ -169,6 +169,10 @@ export const MovieModal: React.FC<MovieModalProps> = ({
                   <ExternalLink className="w-3 h-3 text-zinc-500" />
                 </a>
               </div>
+
+              <p className="text-[10px] text-zinc-500">
+                Metadata provided by TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.
+              </p>
             </div>
           </div>
         </div>

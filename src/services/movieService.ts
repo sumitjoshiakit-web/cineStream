@@ -1,99 +1,57 @@
-import { GoogleGenAI, Type } from '@google/genai';
 import { Movie, TMDBResponse, MoodMatchResponse, ApiStatus } from '../types';
 import { MOCK_MOVIES } from '../data/mockMovies';
-
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+import { fetchWithRetry } from '../utils/fetchWithRetry';
 
 /**
- * Environment variable resolution for TMDB and Gemini API keys.
- * Supports server-side process.env, Vite define replacement, and import.meta.env.
+ * PRODUCTION SECURITY ARCHITECTURE:
+ * To prevent critical API key exposure (especially billing-linked Gemini and TMDB keys),
+ * all external API operations are exclusively proxied through server-side /api/* routes
+ * (Vercel Serverless Functions in production, Vite Connect Middleware in local development).
  * 
- * SECURITY NOTICE:
- * When deployed on Vercel or running in Vite dev, API requests are routed through
- * server-side API routes (/api/*) to keep API keys secure.
- * For pure static hosting (e.g. static S3/GitHub Pages without serverless functions),
- * client-side failover safely falls back to curated catalog data or direct client keys if provided.
+ * The client browser NEVER accesses, stores, or transmits raw secret keys.
+ * If server endpoints are unreachable (e.g. offline, initial setup, or network timeout),
+ * the service gracefully falls back to the curated high-fidelity dataset and heuristic mood matcher.
  */
-function getTmdbKey(): string {
-  const envKey = (typeof process !== 'undefined' && process.env?.TMDB_API_KEY) ||
-    (import.meta as any).env?.VITE_TMDB_API_KEY ||
-    '';
-  return envKey.trim();
-}
-
-function getGeminiKey(): string {
-  const envKey = (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) ||
-    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-    '';
-  return envKey.trim();
-}
 
 /**
- * Check API configuration status
+ * Check API configuration status from the server endpoint
  */
 export async function getApiStatus(): Promise<ApiStatus> {
-  // First try backend / serverless endpoint if available
   try {
-    const res = await fetch('/api/config/status');
+    const res = await fetchWithRetry('/api/config/status', undefined, { maxRetries: 1 });
     if (res.ok) {
       return await res.json();
     }
-  } catch {
-    // Pure static hosting fallback
+  } catch (err) {
+    console.warn('Could not fetch server API status:', err);
   }
 
-  const tmdbKey = getTmdbKey();
-  const geminiKey = getGeminiKey();
-  const hasTmdb = Boolean(tmdbKey && tmdbKey !== 'MY_TMDB_API_KEY');
-  const hasGemini = Boolean(geminiKey && geminiKey !== 'MY_GEMINI_API_KEY');
-
+  // Safe fallback status when offline or server unreachable
   return {
-    hasTmdbKey: hasTmdb,
-    hasGeminiKey: hasGemini,
-    isDemoMode: !hasTmdb,
+    hasTmdbKey: false,
+    hasGeminiKey: false,
+    isDemoMode: true,
   };
 }
 
 /**
- * Fetch Popular Movies with Infinite Scroll pagination
+ * Fetch Popular Movies with Infinite Scroll pagination and exponential backoff
  */
 export async function fetchPopularMovies(page: number = 1): Promise<TMDBResponse> {
-  // Try server-side/serverless endpoint first
   try {
-    const res = await fetch(`/api/movies/popular?page=${page}`);
+    const res = await fetchWithRetry(`/api/movies/popular?page=${page}`, undefined, {
+      maxRetries: 2,
+      initialDelayMs: 300,
+    });
+
     if (res.ok) {
       return await res.json();
     }
-  } catch {
-    // Fall through to client fallback
+  } catch (err) {
+    console.warn('Popular movies API request failed, falling back to curated dataset:', err);
   }
 
-  // Client-side execution (e.g. on static Vercel/Vite preview without backend)
-  const tmdbKey = getTmdbKey();
-  if (tmdbKey && tmdbKey !== 'MY_TMDB_API_KEY') {
-    try {
-      const url = new URL(`${TMDB_BASE_URL}/movie/popular`);
-      url.searchParams.set('page', String(page));
-      url.searchParams.set('language', 'en-US');
-
-      const headers: Record<string, string> = { Accept: 'application/json' };
-      if (tmdbKey.startsWith('ey') || tmdbKey.length > 50) {
-        headers['Authorization'] = `Bearer ${tmdbKey}`;
-      } else {
-        url.searchParams.set('api_key', tmdbKey);
-      }
-
-      const tmdbRes = await fetch(url.toString(), { headers });
-      if (tmdbRes.ok) {
-        const data = await tmdbRes.json();
-        return { ...data, source: 'tmdb' };
-      }
-    } catch (err) {
-      console.warn('Direct TMDB fetch failed, falling back to curated dataset', err);
-    }
-  }
-
-  // Curated dataset pagination fallback
+  // Graceful fallback to curated dataset pagination
   const PAGE_SIZE = 10;
   const total_pages = Math.ceil(MOCK_MOVIES.length / PAGE_SIZE);
   const startIndex = (page - 1) * PAGE_SIZE;
@@ -111,7 +69,7 @@ export async function fetchPopularMovies(page: number = 1): Promise<TMDBResponse
 }
 
 /**
- * Search Movies with Debouncing support and Infinite Scroll pagination
+ * Search Movies with Debouncing and exponential backoff
  */
 export async function searchMovies(query: string, page: number = 1): Promise<TMDBResponse> {
   const trimmed = query.trim();
@@ -119,44 +77,21 @@ export async function searchMovies(query: string, page: number = 1): Promise<TMD
     return fetchPopularMovies(1);
   }
 
-  // Try server-side/serverless endpoint first
   try {
-    const res = await fetch(`/api/movies/search?query=${encodeURIComponent(trimmed)}&page=${page}`);
+    const res = await fetchWithRetry(
+      `/api/movies/search?query=${encodeURIComponent(trimmed)}&page=${page}`,
+      undefined,
+      { maxRetries: 2, initialDelayMs: 300 }
+    );
+
     if (res.ok) {
       return await res.json();
     }
-  } catch {
-    // Fall through to client fallback
+  } catch (err) {
+    console.warn('Search API request failed, falling back to curated local search:', err);
   }
 
-  // Client-side execution
-  const tmdbKey = getTmdbKey();
-  if (tmdbKey && tmdbKey !== 'MY_TMDB_API_KEY') {
-    try {
-      const url = new URL(`${TMDB_BASE_URL}/search/movie`);
-      url.searchParams.set('query', trimmed);
-      url.searchParams.set('page', String(page));
-      url.searchParams.set('include_adult', 'false');
-      url.searchParams.set('language', 'en-US');
-
-      const headers: Record<string, string> = { Accept: 'application/json' };
-      if (tmdbKey.startsWith('ey') || tmdbKey.length > 50) {
-        headers['Authorization'] = `Bearer ${tmdbKey}`;
-      } else {
-        url.searchParams.set('api_key', tmdbKey);
-      }
-
-      const tmdbRes = await fetch(url.toString(), { headers });
-      if (tmdbRes.ok) {
-        const data = await tmdbRes.json();
-        return { ...data, source: 'tmdb' };
-      }
-    } catch (err) {
-      console.warn('Direct TMDB search failed, falling back to local search', err);
-    }
-  }
-
-  // Curated search fallback
+  // Graceful fallback to curated search
   const lower = trimmed.toLowerCase();
   const matched = MOCK_MOVIES.filter((m) =>
     m.title.toLowerCase().includes(lower) ||
@@ -181,7 +116,8 @@ export async function searchMovies(query: string, page: number = 1): Promise<TMD
 }
 
 /**
- * AI Mood Matcher: takes a mood prompt and returns a single recommended movie title and reason
+ * AI Mood Matcher: queries the serverless Gemini endpoint with exponential backoff,
+ * falling back to heuristic mood matching if server or AI is unavailable.
  */
 export async function matchMood(mood: string): Promise<MoodMatchResponse> {
   const text = mood.trim();
@@ -189,58 +125,25 @@ export async function matchMood(mood: string): Promise<MoodMatchResponse> {
     throw new Error('Mood prompt is required');
   }
 
-  // Try server-side/serverless endpoint first
   try {
-    const res = await fetch('/api/ai/mood-match', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mood: text }),
-    });
+    const res = await fetchWithRetry(
+      '/api/ai/mood-match',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mood: text }),
+      },
+      { maxRetries: 2, initialDelayMs: 500 }
+    );
+
     if (res.ok) {
-      return await res.json();
-    }
-  } catch {
-    // Fall through to client fallback
-  }
-
-  // Client-side Gemini invocation if GEMINI_API_KEY is present
-  const geminiKey = getGeminiKey();
-  if (geminiKey && geminiKey !== 'MY_GEMINI_API_KEY') {
-    try {
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
-      const prompt = `The user is describing their current mood, vibe, or aesthetic: "${text}".
-Recommend exactly ONE celebrated, widely recognized movie title that best captures this exact mood or emotion.
-Return JSON with two fields:
-- movieTitle: The standard English recognized title of the movie (e.g., "Blade Runner 2049", "Interstellar", "Amélie", "The Grand Budapest Hotel").
-- reason: A concise 1-2 sentence compelling rationale explaining why this film fits their mood.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              movieTitle: { type: Type.STRING },
-              reason: { type: Type.STRING },
-            },
-            required: ['movieTitle', 'reason'],
-          },
-        },
-      });
-
-      const parsed = JSON.parse(response.text || '{}');
-      if (parsed.movieTitle) {
-        return {
-          movieTitle: parsed.movieTitle,
-          reason: parsed.reason,
-          source: 'gemini',
-        };
+      const data = await res.json();
+      if (data.movieTitle) {
+        return data;
       }
-    } catch (err) {
-      console.warn('Client-side Gemini call failed, using heuristic fallback', err);
     }
+  } catch (err) {
+    console.warn('AI Mood Matcher endpoint failed, using heuristic fallback:', err);
   }
 
   // Intelligent heuristic mood matcher fallback

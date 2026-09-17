@@ -101,6 +101,26 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({
               Powers the AI &ldquo;Mood Matcher&rdquo; feature, mapping subjective moods and aesthetics to critically acclaimed film titles.
             </p>
           </div>
+
+          {/* TMDB Legal Attribution Card */}
+          <div className="p-4 rounded-xl bg-sky-950/20 border border-sky-900/40 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-sky-400">
+                TMDB API Compliance & Attribution
+              </span>
+              <a
+                href="https://www.themoviedb.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-sky-400 underline hover:text-sky-300"
+              >
+                themoviedb.org
+              </a>
+            </div>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              This product uses the TMDB API but is not endorsed or certified by TMDB. All movie metadata, poster art, and ratings are provided by The Movie Database community.
+            </p>
+          </div>
         </div>
 
         <div className="pt-3 border-t border-zinc-800 flex justify-end">

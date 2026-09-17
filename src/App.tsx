@@ -5,6 +5,7 @@ import { MovieGrid } from './components/MovieGrid';
 import { MoodMatcherBar } from './components/MoodMatcherBar';
 import { MovieModal } from './components/MovieModal';
 import { ApiStatusModal } from './components/ApiStatusModal';
+import { TmdbAttributionBadge } from './components/TmdbAttributionBadge';
 import { useDebounce } from './utils/debounce';
 import { useFavorites } from './hooks/useFavorites';
 import { Movie, TMDBResponse, ApiStatus } from './types';
@@ -302,20 +303,29 @@ export default function App() {
         />
       </main>
 
-      {/* Footer */}
-      <footer className="w-full bg-zinc-950 border-t border-zinc-900 py-6 text-center text-xs text-zinc-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-zinc-400">CINEPULSE</span>
-            <span>—</span>
-            <span>TMDB Media Discovery Engine</span>
+      {/* Footer with TMDB Attribution & Architecture notes */}
+      <footer className="w-full bg-zinc-950 border-t border-zinc-900 py-8 text-xs text-zinc-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-zinc-400">
+              <span className="font-black tracking-wider text-white">CINEPULSE</span>
+              <span>•</span>
+              <span>High-Performance Media Discovery</span>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3 text-zinc-500">
+              <span>Infinite Scroll Hydration</span>
+              <span>•</span>
+              <span>500ms Search Debounce</span>
+              <span>•</span>
+              <span>Gemini AI Mood Matcher</span>
+            </div>
           </div>
-          <div className="flex items-center gap-4 text-zinc-500">
-            <span>Infinite Scroll Hydration</span>
-            <span>•</span>
-            <span>500ms Debounce</span>
-            <span>•</span>
-            <span>Gemini Mood Matcher</span>
+
+          <div className="pt-4 border-t border-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <TmdbAttributionBadge />
+            <span className="text-[11px] text-zinc-400">
+              All external API secrets strictly isolated to serverless proxy layer.
+            </span>
           </div>
         </div>
       </footer>
