@@ -1,0 +1,6 @@
+{
+  "name": "CinePulse - TMDB Media Discovery",
+  "description": "Netflix-lite media discovery SPA featuring TMDB REST API integration, infinite scroll data hydration, debounced search, favorites persistence, and Gemini AI Mood Matcher.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
