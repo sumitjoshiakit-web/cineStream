@@ -24,22 +24,22 @@ export default async function handler(req: any, res: any) {
 
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
   if (geminiKey && geminiKey !== 'MY_GEMINI_API_KEY') {
-    try {
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
-      const prompt = `The user is describing their current mood, vibe, or aesthetic: "${mood}".
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
+    const prompt = `The user is describing their current mood, vibe, or aesthetic: "${mood}".
 Recommend exactly ONE celebrated, widely recognized movie title that best captures this exact mood or emotion.
 Return JSON with two fields:
 - movieTitle: The standard English recognized title of the movie (e.g., "Blade Runner 2049", "Interstellar", "Amélie", "The Grand Budapest Hotel").
 - reason: A concise 1-2 sentence compelling rationale explaining why this film fits their mood.`;
 
-      // Don't let a temporarily overloaded Gemini model keep the user waiting.
-      // If Gemini takes longer than 6 seconds, the curated fallback below is returned.
+    // Try stable Gemini text models in sequence. A model outage, overload,
+    // timeout, or invalid response should move to the next model.
+    const models = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
+    for (const model of models) {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      let response;
       try {
-        response = await Promise.race([
+        const response = await Promise.race([
           ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model,
             contents: prompt,
             config: {
               responseMimeType: 'application/json',
@@ -55,24 +55,31 @@ Return JSON with two fields:
           }),
           new Promise<never>((_, reject) => {
             timeoutId = setTimeout(
-              () => reject(new Error('Gemini request timed out after 6 seconds')),
-              6000,
+              () => reject(new Error(`Gemini model ${model} timed out after 4 seconds`)),
+              4000,
             );
           }),
         ]);
+
+        const parsed = JSON.parse(response.text || '{}');
+        if (typeof parsed.movieTitle === 'string' && parsed.movieTitle.trim()) {
+          const payload = {
+            movieTitle: parsed.movieTitle.trim(),
+            reason: typeof parsed.reason === 'string' ? parsed.reason : '',
+            source: 'gemini',
+            model,
+          };
+          res.setHeader('Content-Type', 'application/json');
+          return res.status
+            ? res.status(200).json(payload)
+            : res.end(JSON.stringify(payload));
+        }
+        console.warn(`Gemini model ${model} returned no valid movie title; trying next model.`);
+      } catch (err) {
+        console.warn(`Gemini mood match failed on model ${model}; trying next model:`, err);
       } finally {
         if (timeoutId) clearTimeout(timeoutId);
       }
-
-      const parsed = JSON.parse(response.text || '{}');
-      if (parsed.movieTitle) {
-        res.setHeader('Content-Type', 'application/json');
-        return res.status
-          ? res.status(200).json({ movieTitle: parsed.movieTitle, reason: parsed.reason, source: 'gemini' })
-          : res.end(JSON.stringify({ movieTitle: parsed.movieTitle, reason: parsed.reason, source: 'gemini' }));
-      }
-    } catch (err) {
-      console.warn('Gemini mood match serverless error:', err);
     }
   }
 
