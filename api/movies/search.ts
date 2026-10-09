@@ -1,5 +1,5 @@
-import { MOCK_MOVIES } from '../../src/data/mockMovies.ts';
-import { fetchWithRetry } from '../../src/utils/fetchWithRetry.ts';
+import { MOCK_MOVIES } from '../../src/data/mockMovies';
+import { fetchWithRetry } from '../../src/utils/fetchWithRetry';
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
