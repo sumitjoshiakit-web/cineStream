@@ -32,21 +32,37 @@ Return JSON with two fields:
 - movieTitle: The standard English recognized title of the movie (e.g., "Blade Runner 2049", "Interstellar", "Amélie", "The Grand Budapest Hotel").
 - reason: A concise 1-2 sentence compelling rationale explaining why this film fits their mood.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              movieTitle: { type: Type.STRING },
-              reason: { type: Type.STRING },
+      // Don't let a temporarily overloaded Gemini model keep the user waiting.
+      // If Gemini takes longer than 6 seconds, the curated fallback below is returned.
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      let response;
+      try {
+        response = await Promise.race([
+          ai.models.generateContent({
+            model: 'gemini-3.8-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  movieTitle: { type: Type.STRING },
+                  reason: { type: Type.STRING },
+                },
+                required: ['movieTitle', 'reason'],
+              },
             },
-            required: ['movieTitle', 'reason'],
-          },
-        },
-      });
+          }),
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(
+              () => reject(new Error('Gemini request timed out after 6 seconds')),
+              6000,
+            );
+          }),
+        ]);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
 
       const parsed = JSON.parse(response.text || '{}');
       if (parsed.movieTitle) {
